@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>电商商品多条件筛选系统</title>
+    <!-- 实验建议依赖：Bootstrap+ECharts -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        /* 仅保留实验必需的样式 */
+        .chart-container { width: 100%; height: 280px; margin: 10px 0; border: 1px solid #eee; border-radius: 8px; padding: 10px; }
+        .set-expression { color: #165dff; font-weight: bold; margin: 10px 0; }
+        body { padding: 20px 0; background-color: #f9f9f9; }
+    </style>
+</head>
+<body class="container">
+    <h1 class="text-center mb-4">电商商品多条件筛选系统</h1>
+
+    <!-- 一、实验要求：筛选条件表单 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">筛选条件</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label>商品类别</label>
+                    <select id="category" class="form-select">
+                        <option value="家电" selected>家电</option>
+                        <option value="服装">服装</option>
+                        <option value="食品">食品</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label>价格区间</label>
+                    <select id="price" class="form-select">
+                        <option value="0-100元">0-100元</option>
+                        <option value="100-500元" selected>100-500元</option>
+                        <option value="500元以上">500元以上</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label>是否包邮</label>
+                    <select id="shipping" class="form-select">
+                        <option value="是" selected>是</option>
+                        <option value="否">否</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 二、实验要求：ECharts可视化 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">商品数据可视化</h5>
+            <div class="row g-4">
+                <div class="col-md-4"><div id="category-chart" class="chart-container"></div></div>
+                <div class="col-md-4"><div id="price-chart" class="chart-container"></div></div>
+                <div class="col-md-4"><div id="compare-chart" class="chart-container"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 三、实验要求：筛选结果（集合表达式+商品列表） -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">筛选结果</h5>
+            <p class="set-expression" id="expression">家电集合 ∩ 100-500元集合 ∩ 包邮是集合</p>
+            <p id="result-count">符合条件：1件 / 总商品：10件</p>
+            <div class="row g-3" id="product-list">
+                <div class="col-md-3">
+                    <div class="card h-100 p-3 border-primary">
+                        <h6>耳机</h6>
+                        <p>类别：家电</p>
+                        <p>价格：199元</p>
+                        <p class="text-success">包邮：是</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 四、实验要求：原始商品集合（折叠面板） -->
+    <div class="card">
+        <div class="card-header">
+            <button class="btn btn-link" data-bs-toggle="collapse" data-bs-target="#raw-products">
+                查看原始商品集合（共{{ raw_products|length }}件）
+            </button>
+        </div>
+        <div id="raw-products" class="collapse card-body">
+            <div class="row g-3">
+                {% for p in raw_products %}
+                <div class="col-md-3">
+                    <div class="card h-100 p-3">
+                        <h6>{{ p.name }}</h6>
+                        <p>类别：{{ p.category }}</p>
+                        <p>价格：{{ p.price }}元</p>
+                        <p class="{% if p.free_shipping %}text-success{% else %}text-danger{% endif %}">
+                            包邮：{{ "是" if p.free_shipping else "否" }}
+                        </p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 实验必需脚本 -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 1. 初始化ECharts（仅实验必需的3个图表）
+        const categoryChart = echarts.init(document.getElementById('category-chart'));
+        const priceChart = echarts.init(document.getElementById('price-chart'));
+        const compareChart = echarts.init(document.getElementById('compare-chart'));
+
+        // 2. 加载初始数据
+        $(function() {
+            $.get("/statistics", function(stat) {
+                // 类别分布饼图
+                categoryChart.setOption({
+                    tooltip: { trigger: 'item' },
+                    series: [{ type: 'pie', data: Object.entries(stat.category_count).map(([k,v])=>({name:k,value:v})), color: ['#4895ef','#f9c74f','#f8961e'] }]
+                });
+                // 价格分布柱状图
+                priceChart.setOption({
+                    tooltip: { trigger: 'axis' },
+                    xAxis: { type: 'category', data: Object.keys(stat.price_count) },
+                    yAxis: { type: 'value' },
+                    series: [{ type: 'bar', data: Object.values(stat.price_count), color: '#43aa8b' }]
+                });
+                // 筛选对比图
+                updateCompareChart(stat.total_count, 1);
+            });
+        });
+
+        // 3. 筛选条件变化监听
+        $("#category, #price, #shipping").on("change", function() {
+            const data = {
+                category: $("#category").val(),
+                price: $("#price").val(),
+                shipping: $("#shipping").val()
+            };
+            $.ajax({
+                url: "/filter", type: "POST", contentType: "application/json",
+                data: JSON.stringify(data),
+                success: function(res) {
+                    // 更新表达式、数量、商品列表
+                    $("#expression").text(res.expression);
+                    $("#result-count").text(`符合条件：${res.matched_count}件 / 总商品：${res.total_count}件`);
+                    let html = res.products.map(p => `
+                        <div class="col-md-3">
+                            <div class="card h-100 p-3 border-primary">
+                                <h6>${p.name}</h6>
+                                <p>类别：${p.category}</p>
+                                <p>价格：${p.price}元</p>
+                                <p class="${p.free_shipping?'text-success':'text-danger'}">包邮：${p.free_shipping?'是':'否'}</p>
+                            </div>
+                        </div>
+                    `).join('') || '<p class="text-center text-muted w-100">无符合条件商品</p>';
+                    $("#product-list").html(html);
+                    // 更新对比图
+                    updateCompareChart(res.total_count, res.matched_count);
+                }
+            });
+        });
+
+        // 4. 辅助：更新筛选对比图
+        function updateCompareChart(total, matched) {
+            compareChart.setOption({
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: ['总商品', '符合条件'] },
+                yAxis: { type: 'value' },
+                series: [{ type: 'bar', data: [total, matched], color: ['#90a959', '#f94144'] }]
+            });
+        }
+
+        // 窗口 resize 适配
+        window.onresize = function() {
+            categoryChart.resize(); priceChart.resize(); compareChart.resize();
+        };
+    </script>
+</body>
+</html>
